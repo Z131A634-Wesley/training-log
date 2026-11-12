@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { Session } from '../domain/training'
-import { exportBackup, loadSessions, migrateLegacyDocument, parseBackup, saveSessions, STORAGE_KEY } from './training-storage'
+import { exportBackup, importLegacySessions, loadSessions, migrateLegacyDocument, parseBackup, saveSessions, STORAGE_KEY } from './training-storage'
 
 const first: Session = {
   id: 'a',
@@ -115,4 +115,45 @@ it('refuses to import a document that does not validate', () => {
     schemaVersion: 1,
     sessions: [{ id: 'x', date: '2026-02-29', createdAt: '2026-11-12T00:00:00.000Z', exercises: [] }],
   }))).toBeNull()
+})
+
+const legacyDocument = (sessions: unknown[]) => JSON.stringify({ schemaVersion: 1, sessions })
+
+it('imports the earlier document once and keeps it in place', () => {
+  const storage = memoryStorage()
+  storage.setItem('training-log:v1', legacyDocument([{
+    id: 'old-1',
+    date: '2026-11-12',
+    createdAt: '2026-11-12T11:12:00.000Z',
+    exercises: [{ id: 'e1', name: '坐姿划船', weight: 40, sets: 4 }],
+  }]))
+
+  expect(importLegacySessions(storage)).toBe(1)
+  expect(loadSessions(storage)).toEqual([{
+    id: 'old-1',
+    date: '2026-11-12',
+    createdAt: '2026-11-12T11:12:00.000Z',
+    exercises: [{ name: '坐姿划船', weightKg: 40, sets: 4 }],
+  }])
+  expect(storage.getItem('training-log:v1')).not.toBeNull()
+  expect(importLegacySessions(storage)).toBe(0)
+})
+
+it('merges the earlier document into existing records without duplicating ids', () => {
+  const storage = memoryStorage()
+  saveSessions(storage, [first])
+  storage.setItem('training-log:v1', legacyDocument([
+    { id: first.id, date: first.date, createdAt: first.createdAt, exercises: [{ name: '俯卧撑', weight: 0, sets: 3 }] },
+    { id: 'old-2', date: '2026-10-01', createdAt: '2026-10-01T10:00:00.000Z', exercises: [{ name: '深蹲', weight: 55, sets: 5 }] },
+  ]))
+
+  expect(importLegacySessions(storage)).toBe(1)
+  const stored = loadSessions(storage)
+  expect(stored).toHaveLength(2)
+  expect(stored[0]).toEqual(first)
+  expect(stored[1]?.id).toBe('old-2')
+})
+
+it('does nothing when there is no earlier document', () => {
+  expect(importLegacySessions(memoryStorage())).toBe(0)
 })

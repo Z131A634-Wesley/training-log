@@ -6,7 +6,7 @@ import TrainingHeatmap from './components/TrainingHeatmap.vue'
 import TrainingHistory from './components/TrainingHistory.vue'
 import { formatDateLabel, heatmapWeeks, localDate } from './domain/dates'
 import type { Exercise, Session } from './domain/training'
-import { loadSessions, LEGACY_STORAGE_KEY, migrateLegacyDocument, saveSessions, STORAGE_KEY } from './storage/training-storage'
+import { importLegacySessions, loadSessions, saveSessions, STORAGE_KEY } from './storage/training-storage'
 import { reveal as vReveal } from './ui/reveal'
 
 const sessions = ref<Session[]>([])
@@ -29,15 +29,8 @@ class StorageConflict extends Error {}
 
 try {
   const storage = window.localStorage
-  // 早一版的记录存在另一个键里（动作字段叫 weight）。只在当前键为空时导入一次，旧数据保持原样。
-  if (storage.getItem(STORAGE_KEY) === null) {
-    const legacy = storage.getItem(LEGACY_STORAGE_KEY)
-    const migrated = legacy ? migrateLegacyDocument(legacy) : null
-    if (migrated?.length) {
-      saveSessions(storage, migrated)
-      migratedCount.value = migrated.length
-    }
-  }
+  // 早一版把记录存在另一个键里（动作字段叫 weight），这里一次性并进来；旧数据保持原样。
+  migratedCount.value = importLegacySessions(storage)
   sessions.value = loadSessions({
     getItem(key) {
       storageBaseline = storage.getItem(key)

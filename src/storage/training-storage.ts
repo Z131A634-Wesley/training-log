@@ -4,6 +4,8 @@ import type { Exercise, Session } from '../domain/training'
 export const STORAGE_KEY = 'training-log:sessions'
 /** 合并前那一版用的键和字段名（weight），只用于一次性导入。 */
 export const LEGACY_STORAGE_KEY = 'training-log:v1'
+/** 记录「旧数据已经检查过」，避免删掉的记录下次加载又冒出来。 */
+export const LEGACY_IMPORTED_KEY = 'training-log:v1:imported'
 const SCHEMA_VERSION = 1
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -122,4 +124,27 @@ export function migrateLegacyDocument(text: string): Session[] | null {
   } catch {
     return null
   }
+}
+
+/**
+ * 一次性把旧键里的记录并进当前文档，按 id 去重。返回新增的条数。
+ * 旧键本身保持原样；导入标记写入后不再重复执行。
+ */
+export function importLegacySessions(storage: Pick<Storage, 'getItem' | 'setItem'>): number {
+  if (storage.getItem(LEGACY_IMPORTED_KEY) !== null) return 0
+
+  const raw = storage.getItem(LEGACY_STORAGE_KEY)
+  if (raw === null) return 0
+
+  const migrated = migrateLegacyDocument(raw)
+  if (!migrated?.length) return 0
+
+  const stored = storage.getItem(STORAGE_KEY)
+  const current = stored === null ? [] : parseBackup(stored)
+  const known = new Set(current.map((session) => session.id))
+  const merged = [...current, ...migrated.filter((session) => !known.has(session.id))]
+
+  if (merged.length > current.length) saveSessions(storage, merged)
+  storage.setItem(LEGACY_IMPORTED_KEY, '1')
+  return merged.length - current.length
 }
