@@ -17,6 +17,7 @@ const draft = ref<DraftExercise[]>([])
 const selectedDate = ref(today.value)
 const heatmap = ref<HTMLElement | null>(null)
 const dayDetail = ref<HTMLElement | null>(null)
+const editor = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const pendingBackup = ref<WorkoutDocument | null>(null)
 const backupName = ref('')
@@ -59,6 +60,7 @@ const formatDate = (value: string) => {
 function startNew(day = today.value) {
   editingId.value = null; date.value = day; draft.value = [newExercise()]
   formError.value = ''; formOpen.value = true
+  nextTick(() => editor.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 function editSession(session: Session) {
   editingId.value = session.id; date.value = session.date
@@ -152,7 +154,7 @@ onUnmounted(() => {
         <div class="hero-aside"><span>CONSISTENCY<br>OVER INTENSITY</span><strong>01<span>/</span>52</strong><small>KEEP SHOWING UP</small></div>
       </section>
 
-      <section v-if="formOpen" class="panel editor" aria-labelledby="editor-title">
+      <section v-if="formOpen" ref="editor" class="panel editor" aria-labelledby="editor-title">
         <div class="section-heading"><div><p class="eyebrow">YOUR SESSION</p><h2 id="editor-title">{{ editingId ? '编辑训练' : '记录训练' }}</h2></div><button class="icon-button" aria-label="关闭表单" @click="formOpen = false">×</button></div>
         <form @submit.prevent="saveSession">
           <label class="field date-field"><span>训练日期</span><input v-model="date" type="date" :max="today" required></label>
