@@ -1,0 +1,85 @@
+import { isLocalDate } from '../domain/dates'
+import type { Exercise, Session } from '../domain/training'
+
+export const STORAGE_KEY = 'training-log:sessions'
+const SCHEMA_VERSION = 1
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value)
+    && isLocalDate(value.slice(0, 10))
+    && Number.isFinite(Date.parse(value))
+}
+
+function isExercise(value: unknown): value is Exercise {
+  return isRecord(value)
+    && typeof value.name === 'string' && value.name.trim() !== ''
+    && typeof value.weightKg === 'number' && Number.isFinite(value.weightKg) && value.weightKg >= 0
+    && typeof value.sets === 'number' && Number.isInteger(value.sets) && value.sets > 0
+    && (value.note === undefined || typeof value.note === 'string')
+}
+
+function isSession(value: unknown): value is Session {
+  if (!isRecord(value)
+    || typeof value.id !== 'string' || value.id.trim() === ''
+    || !isLocalDate(value.date)
+    || !isTimestamp(value.createdAt)
+    || !Array.isArray(value.exercises) || value.exercises.length === 0) {
+    return false
+  }
+
+  for (const exercise of value.exercises) {
+    if (!isExercise(exercise)) return false
+  }
+  return true
+}
+
+function validateSessions(value: unknown): Session[] {
+  if (!Array.isArray(value)) throw new Error('训练记录应为列表。')
+
+  const sessions: Session[] = []
+  const ids = new Set<string>()
+  for (const [index, session] of value.entries()) {
+    if (!isSession(session)) throw new Error(`第 ${index + 1} 条训练记录的字段无效。`)
+    if (ids.has(session.id)) throw new Error(`第 ${index + 1} 条训练记录的 ID 重复。`)
+
+    ids.add(session.id)
+    sessions.push(session)
+  }
+  return sessions
+}
+
+export function loadSessions(storage: Pick<Storage, 'getItem'>): Session[] {
+  const text = storage.getItem(STORAGE_KEY)
+  return text === null ? [] : parseBackup(text)
+}
+
+export function saveSessions(storage: Pick<Storage, 'setItem'>, sessions: readonly Session[]): void {
+  storage.setItem(STORAGE_KEY, encodeBackup(sessions))
+}
+
+export function parseBackup(text: string): Session[] {
+  let document: unknown
+  try {
+    document = JSON.parse(text)
+  } catch {
+    throw new Error('备份内容不是有效的 JSON。')
+  }
+
+  if (!isRecord(document) || document.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error('无法识别此备份的版本。')
+  }
+  return validateSessions(document.sessions)
+}
+
+function encodeBackup(sessions: readonly Session[], indent?: number): string {
+  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions: validateSessions(sessions) }, null, indent)
+}
+
+export function exportBackup(sessions: readonly Session[]): string {
+  return encodeBackup(sessions, 2)
+}
