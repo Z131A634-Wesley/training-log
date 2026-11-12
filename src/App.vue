@@ -16,6 +16,7 @@ const today = ref(localDate(new Date()))
 const draft = ref<DraftExercise[]>([])
 const selectedDate = ref(today.value)
 const heatmap = ref<HTMLElement | null>(null)
+const dayDetail = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const pendingBackup = ref<WorkoutDocument | null>(null)
 const backupName = ref('')
@@ -28,6 +29,10 @@ const exerciseNames = computed(() => [...new Set(data.value.sessions.flatMap(s =
 const totals = computed(() => dailyTotals(data.value.sessions))
 const selectedSessions = computed(() => sortedSessions.value.filter(s => s.date === selectedDate.value))
 const totalSets = computed(() => Object.values(totals.value).reduce((sum, n) => sum + n, 0))
+function selectDay(day: string) {
+  selectedDate.value = day
+  nextTick(() => dayDetail.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+}
 const recentDays = computed(() => Object.keys(totals.value).filter(d => (totals.value[d] ?? 0) > 0).length)
 const heatWeeks = computed(() => {
   const [year, month, dayOfMonth] = today.value.split('-').map(Number)
@@ -171,7 +176,7 @@ onUnmounted(() => {
 
       <section class="panel activity">
         <div class="section-heading activity-heading"><div><p class="eyebrow">THE BIG PICTURE</p><h2>训练足迹<span class="heading-dot">.</span></h2><p class="section-copy">每个小方块，都是你为自己留下的印记。</p></div><span class="period-badge">最近 52 周 <span>↗</span></span></div>
-        <div class="heatmap-wrap"><div class="weekdays"><span>一</span><span>三</span><span>五</span><span>日</span></div><div ref="heatmap" class="heatmap-scroll"><div class="heatmap-months"><span v-for="(week, i) in heatWeeks" :key="i">{{ week.find(d => d.day === 1) ? week.find(d => d.day === 1)?.month + '月' : i === 0 ? week[0]?.month + '月' : '' }}</span></div><div class="heatmap-grid"><div v-for="(week, i) in heatWeeks" :key="i" class="heat-week"><button v-for="day in week" :key="day.key" type="button" class="heat-cell" :class="['level-' + level(day.count), { future: day.future, selected: day.key === selectedDate }]" :disabled="day.future" :title="daySummary(day.key, day.count)" :aria-label="daySummary(day.key, day.count)" @focus="selectedDate = day.key" @click="selectedDate = day.key" /></div></div></div></div>
+        <div class="heatmap-wrap"><div class="weekdays"><span>一</span><span>三</span><span>五</span><span>日</span></div><div ref="heatmap" class="heatmap-scroll"><div class="heatmap-months"><span v-for="(week, i) in heatWeeks" :key="i">{{ week.find(d => d.day === 1) ? week.find(d => d.day === 1)?.month + '月' : i === 0 ? week[0]?.month + '月' : '' }}</span></div><div class="heatmap-grid"><div v-for="(week, i) in heatWeeks" :key="i" class="heat-week"><button v-for="day in week" :key="day.key" type="button" class="heat-cell" :class="['level-' + level(day.count), { future: day.future, selected: day.key === selectedDate }]" :disabled="day.future" :title="daySummary(day.key, day.count)" :aria-label="daySummary(day.key, day.count)" @focus="selectedDate = day.key" @click="selectDay(day.key)" /></div></div></div></div>
         <div class="heat-footer"><span>点击方块查看当天训练</span><div class="legend"><span>较少</span><i v-for="n in 5" :key="n" :class="'level-' + (n - 1)"></i><span>较多</span></div></div>
         <div class="stats"><div><strong>{{ recentDays }}</strong><span>累计训练天数</span></div><div><strong>{{ data.sessions.length }}</strong><span>累计训练次数</span></div><div><strong>{{ totalSets }}</strong><span>累计完成组数</span></div></div>
       </section>
@@ -183,7 +188,7 @@ onUnmounted(() => {
             <div v-if="!sortedSessions.length" class="empty-state"><span class="empty-icon">↗</span><h3>从第一组开始</h3><p>还没有训练记录。记录下今天的训练，<br>让你的第一块足迹亮起来。</p><button class="button button-outline" @click="startNew()">＋ 记录训练</button></div>
             <template v-else><article v-for="session in sortedSessions" :key="session.id" class="history-card"><div class="history-date"><span class="history-indicator"></span><strong>{{ formatDate(session.date) }}</strong><span class="session-badge">{{ session.exercises.reduce((sum, e) => sum + e.sets, 0) }} 组</span><div class="history-actions"><button @click="editSession(session)">编辑</button><button @click="removeSession(session)">删除</button></div></div><div v-for="exercise in session.exercises" :key="exercise.id" class="history-exercise"><div><strong>{{ exercise.name }}</strong><p v-if="exercise.note">{{ exercise.note }}</p></div><span>{{ exercise.weight }} <small>kg</small> <i>×</i> {{ exercise.sets }} <small>组</small></span></div></article></template>
           </div>
-          <aside class="side-column"><div class="side-card day-card"><p class="eyebrow">SELECTED DAY</p><h3>{{ formatDate(selectedDate) }}</h3><template v-if="selectedSessions.length"><p class="day-total">当天共 {{ totals[selectedDate] }} 组 · {{ selectedSessions.length }} 次训练</p><div v-for="session in selectedSessions" :key="session.id" class="day-session"><p v-for="exercise in session.exercises" :key="exercise.id"><strong>{{ exercise.name }}</strong> {{ exercise.weight }} kg × {{ exercise.sets }} 组 <small v-if="exercise.note">{{ exercise.note }}</small></p></div></template><p v-else class="muted">这一天还没有训练记录。</p><button v-if="selectedDate <= today" class="text-link" @click="startNew(selectedDate)">为这一天添加记录 ↗</button></div>
+          <aside class="side-column"><div ref="dayDetail" class="side-card day-card"><p class="eyebrow">SELECTED DAY</p><h3>{{ formatDate(selectedDate) }}</h3><template v-if="selectedSessions.length"><p class="day-total">当天共 {{ totals[selectedDate] }} 组 · {{ selectedSessions.length }} 次训练</p><div v-for="session in selectedSessions" :key="session.id" class="day-session"><p v-for="exercise in session.exercises" :key="exercise.id"><strong>{{ exercise.name }}</strong> {{ exercise.weight }} kg × {{ exercise.sets }} 组 <small v-if="exercise.note">{{ exercise.note }}</small></p></div></template><p v-else class="muted">这一天还没有训练记录。</p><button v-if="selectedDate <= today" class="text-link" @click="startNew(selectedDate)">为这一天添加记录 ↗</button></div>
             <div class="side-card backup-card"><div class="backup-icon">↓</div><p class="eyebrow">YOUR DATA, YOURS</p><h3>好好保存每一步</h3><p class="muted">数据保存在当前浏览器。定期导出备份，换设备也能找回记录。</p><div class="backup-actions"><button @click="exportBackup" :disabled="!!storageProblem">导出备份 ↗</button><button @click="fileInput?.click()">导入备份 ↗</button><input ref="fileInput" class="visually-hidden" type="file" accept=".json,application/json" @change="chooseBackup"></div></div></aside>
         </div>
       </section>
