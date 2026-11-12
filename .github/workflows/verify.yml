@@ -1,0 +1,63 @@
+name: Verify and publish
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 已核验的 main 完整提交 SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify training log
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check release target
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main || "$RELEASE_SHA" != "$GITHUB_SHA" ]]; then
+            echo 'Choose main and supply the exact commit SHA being dispatched.' >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: training-log-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: pages
