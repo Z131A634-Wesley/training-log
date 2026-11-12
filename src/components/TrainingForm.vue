@@ -199,9 +199,9 @@ function submit() {
       <fieldset v-for="(row, index) in rows" :key="row.id" class="exercise-card">
         <legend class="visually-hidden">动作 {{ index + 1 }}</legend>
         <div class="exercise-head">
-          <span class="exercise-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+          <span class="micro">{{ String(index + 1).padStart(2, '0') }}</span>
           <span>训练动作</span>
-          <button v-if="rows.length > 1" type="button" class="text-button remove"
+          <button v-if="rows.length > 1" type="button" class="link remove"
             :aria-label="`移除动作 ${index + 1}`" @click="removeRow(index)">移除</button>
         </div>
 
@@ -212,10 +212,10 @@ function submit() {
               <input :id="`exercise-name-${row.id}`" type="text" :value="row.name" placeholder="例如：坐姿划船"
                 autocomplete="off" required @input="changeName(row, $event)"
                 @change="fillInheritedOnBlur(row)" />
-              <button v-if="names.length" class="history-picker" type="button"
+              <button v-if="names.length" class="button button--secondary history-picker" type="button"
                 :aria-expanded="openPicker === row.id" :aria-controls="`exercise-picker-${row.id}`"
                 @click="openPicker = openPicker === row.id ? null : row.id">
-                历史动作
+                历史
               </button>
             </div>
             <ul v-if="names.length" v-show="openPicker === row.id" :id="`exercise-picker-${row.id}`"
@@ -239,7 +239,7 @@ function submit() {
                 @click="stepSets(row, -1)">−</button>
               <input :id="`exercise-sets-${row.id}`" type="number" :value="row.sets" inputmode="numeric"
                 min="1" step="1" required @input="changeSets(row, $event)" />
-              <button type="button" :aria-label="`增加动作 ${index + 1} 的组数`" @click="stepSets(row, 1)">＋</button>
+              <button type="button" :aria-label="`增加动作 ${index + 1} 的组数`" @click="stepSets(row, 1)">+</button>
             </span>
           </div>
 
@@ -252,107 +252,168 @@ function submit() {
       </fieldset>
     </div>
 
-    <button type="button" class="add-exercise" @click="addRow">＋ 添加动作</button>
+    <button type="button" class="add-exercise" @click="addRow">+ 添加动作</button>
 
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+
     <div class="form-actions">
-      <button v-if="editing" type="button" class="button button-quiet" @click="emit('cancel')">取消</button>
-      <button type="submit" class="button button-dark" :disabled="disabled">保存训练 <span>↗</span></button>
+      <button v-if="editing" type="button" class="button button--secondary" @click="emit('cancel')">取消</button>
+      <button type="submit" class="button button--primary" :disabled="disabled">保存训练</button>
+    </div>
+
+    <div class="save-bar">
+      <button v-if="editing" type="button" class="button button--secondary" @click="emit('cancel')">取消</button>
+      <button type="submit" class="button button--primary" :disabled="disabled">保存训练</button>
     </div>
   </form>
 </template>
 
 <style scoped>
-.training-form { display: grid; gap: 0; }
-.field { display: flex; flex-direction: column; gap: 8px; font-size: 11px; font-weight: 700; color: #687768; }
-.field small { font-weight: 400; color: #a0aca0; }
+.training-form { display: grid; gap: var(--space-5); }
+
+.field { display: grid; gap: var(--space-2); }
+.field > label, .field > span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.field small { font-weight: 400; color: var(--ink-3); }
 .field input {
   width: 100%;
-  height: 42px;
-  padding: 0 11px;
-  border: 1px solid #dfe6db;
-  border-radius: 3px;
-  background: #fff;
-  color: #202820;
-  font-size: 13px;
+  height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
 }
-.field input::placeholder { color: #bdc6bb; }
-.date-field { max-width: 220px; margin-bottom: 20px; }
-.exercise-list { display: grid; gap: 12px; }
+.field input::placeholder { color: #9a9d93; }
+.field input:focus {
+  outline: none;
+  border-color: var(--today);
+  box-shadow: 0 0 0 3px rgb(180 83 42 / 0.16);
+}
+
+.date-field { max-width: 200px; }
+
+.exercise-list { display: grid; gap: var(--space-4); }
 .exercise-card {
   display: grid;
-  gap: 0;
+  gap: var(--space-4);
   min-inline-size: 0;
   margin: 0;
-  padding: 17px;
-  background: #f8faf6;
-  border: 1px solid #edf1e9;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
 }
-.exercise-head { display: flex; align-items: center; gap: 9px; margin-bottom: 15px; font-size: 12px; font-weight: 700; }
-.exercise-number { font-size: 10px; color: #9aae95; font-variant-numeric: tabular-nums; }
+.exercise-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
 .exercise-head .remove { margin-left: auto; }
-.exercise-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+
+.exercise-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: var(--space-4); }
 .note-field { grid-column: 1 / -1; }
-.name-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.history-picker {
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid #cbd4c7;
-  background: transparent;
-  color: #456c48;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.history-picker:hover { background: #e9eee5; }
+
+.name-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); }
+.history-picker { height: 44px; }
+
 .history-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  max-block-size: 9rem;
+  gap: var(--space-2);
+  max-block-size: 160px;
   overflow: auto;
-  margin: 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
 .history-options button {
   padding: 6px 10px;
-  border: 1px solid #cbd8c6;
-  background: #fff;
-  color: #35573a;
-  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13px;
   overflow-wrap: anywhere;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
 }
-.history-options button:hover { background: #eef4ea; }
-.stepper { display: flex; height: 42px; border: 1px solid #dfe6db; background: #fff; }
-.stepper button { border: 0; background: #fff; color: #6b806b; width: 34px; font-size: 15px; }
-.stepper button:disabled { opacity: .45; }
-.stepper input {
+.history-options button:hover { background: var(--surface-sunk); color: var(--ink); }
+
+.stepper {
+  display: flex;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+.stepper:focus-within { border-color: var(--today); box-shadow: 0 0 0 3px rgb(180 83 42 / 0.16); }
+.stepper button {
+  width: 36px;
   border: 0;
-  text-align: center;
-  padding: 0;
-  min-width: 0;
-  appearance: textfield;
-  width: 100%;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 15px;
+  transition: background-color 120ms var(--ease);
 }
+.stepper button:hover:not(:disabled) { background: var(--surface-sunk); }
+.stepper button:disabled { opacity: 0.4; cursor: not-allowed; }
+.stepper input {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  text-align: center;
+  appearance: textfield;
+  font-size: 15px;
+  background: var(--surface);
+}
+.stepper input:focus { outline: none; box-shadow: none; }
 .stepper input::-webkit-inner-spin-button { appearance: none; }
+
 .add-exercise {
   width: 100%;
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px dashed #cbd8c6;
+  height: 44px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: #678b62;
-  font-weight: 600;
-  font-size: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
 }
-.add-exercise:hover { background: #f4f7f1; }
-.form-error { margin: 12px 0 0; color: #b45137; font-size: 12px; }
-.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.add-exercise:hover { background: var(--surface-sunk); color: var(--ink); }
 
-@media (max-width: 700px) {
+.form-error { margin: 0; font-size: 13px; color: var(--danger); }
+.form-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.save-bar { display: none; }
+
+@media (max-width: 720px) {
   .exercise-grid { grid-template-columns: 1fr 1fr; }
   .exercise-name, .note-field { grid-column: 1 / -1; }
   .date-field { max-width: none; }
+  .form-actions { display: none; }
+
+  .save-bar {
+    display: flex;
+    gap: var(--space-2);
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: var(--space-5) calc(var(--space-5) * -1) calc(var(--space-5) * -1);
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .save-bar .button--primary { flex: 1; }
 }
 </style>

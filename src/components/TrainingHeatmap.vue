@@ -16,8 +16,6 @@ const emit = defineEmits<{
 const today = ref(localDate())
 const weeks = computed(() => heatmapWeeks(today.value))
 const totals = computed(() => dailySets(props.sessions))
-const activeDays = computed(() => totals.value.size)
-const totalSets = computed(() => [...totals.value.values()].reduce((sum, count) => sum + count, 0))
 const weekdays = ['一', '', '三', '', '五', '', '日']
 const scrollArea = ref<HTMLElement>()
 const activeDate = ref(today.value)
@@ -25,7 +23,7 @@ const hoveredDate = ref('')
 const focusedDate = ref('')
 const summaryDate = computed(() => hoveredDate.value || focusedDate.value || props.selected)
 
-// 每个月份标签落在含「1 号」的那一列上，第一列也补一个，避免开头空着。
+// 月份标签落在含「1 号」的那一列，第一列补一个，避免开头空着。
 const months = computed(() => weeks.value.map((week, index) => {
   const firstDay = week.find((date) => date.slice(8) === '01')
   if (firstDay) return `${Number(firstDay.slice(5, 7))}月`
@@ -85,16 +83,12 @@ function moveFocus(event: KeyboardEvent, week: number, day: number) {
 
 <template>
   <section class="panel activity" aria-labelledby="activity-title">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">THE BIG PICTURE</p>
-        <h2 id="activity-title">训练足迹<span class="heading-dot">.</span></h2>
-        <p class="section-copy">每个小方块，都是你为自己留下的印记。</p>
-      </div>
-      <span class="period-badge">最近 52 周 <span aria-hidden="true">↗</span></span>
+    <div class="section-head">
+      <h2 id="activity-title">训练足迹</h2>
+      <span class="micro">最近 52 周</span>
     </div>
 
-    <p v-if="unavailable" class="muted">本机记录暂时无法读取，无法显示热力图。</p>
+    <p v-if="unavailable" class="small muted">本机记录暂时无法读取，无法显示热力图。</p>
     <template v-else>
       <p id="heatmap-guide" class="visually-hidden">
         最近 52 周，每个方块代表一天。用方向键移动，按回车或点击查看当天训练。
@@ -113,7 +107,7 @@ function moveFocus(event: KeyboardEvent, week: number, day: number) {
               <template v-for="(date, row) in week" :key="date">
                 <span v-if="date > today" class="heat-cell future" aria-hidden="true"></span>
                 <button v-else type="button" class="heat-cell"
-                  :class="[`level-${level(sets(date))}`, { selected: selected === date }]"
+                  :class="[`level-${level(sets(date))}`, { selected: selected === date, today: date === today }]"
                   :data-date="date"
                   :tabindex="activeDate === date ? 0 : -1"
                   :aria-label="`${date}：${sets(date)} 组`"
@@ -131,19 +125,13 @@ function moveFocus(event: KeyboardEvent, week: number, day: number) {
         </div>
       </div>
 
-      <div class="heat-footer">
-        <span>{{ summaryDate ? `${summaryDate} · ${sets(summaryDate)} 组` : '点击方块查看当天训练' }}</span>
+      <div class="heat-foot">
+        <span class="micro">{{ summaryDate ? `${summaryDate} · ${sets(summaryDate)} 组` : '点击方块查看当天训练' }}</span>
         <div class="legend">
-          <span>较少</span>
+          <span class="micro">少</span>
           <i v-for="n in 5" :key="n" :class="`level-${n - 1}`"></i>
-          <span>较多</span>
+          <span class="micro">多</span>
         </div>
-      </div>
-
-      <div class="stats">
-        <div><strong>{{ activeDays }}</strong><span>累计训练天数</span></div>
-        <div><strong>{{ sessions.length }}</strong><span>累计训练次数</span></div>
-        <div><strong>{{ totalSets }}</strong><span>累计完成组数</span></div>
       </div>
     </template>
   </section>
@@ -151,62 +139,81 @@ function moveFocus(event: KeyboardEvent, week: number, day: number) {
 
 <style scoped>
 .activity { --cell: 14px; --gap: 4px; }
-.heatmap-wrap { display: flex; gap: 10px; margin-top: 30px; }
+.activity .section-head h2 { font-size: 24px; letter-spacing: -0.02em; }
+
+.heatmap-wrap { display: flex; gap: var(--space-2); margin-top: var(--space-5); }
 .weekdays {
   display: grid;
-  grid-template-rows: 20px repeat(7, var(--cell));
+  grid-template-rows: 16px repeat(7, var(--cell));
   gap: var(--gap);
-  flex: 0 0 13px;
+  flex: 0 0 auto;
   align-items: center;
-  color: #a4aea2;
-  font-size: 9px;
+  width: 14px;
+  font-size: 10px;
+  color: var(--ink-3);
 }
-.heatmap-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; padding-bottom: 5px; scrollbar-width: thin; }
+.heatmap-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  scrollbar-width: thin;
+}
 .heatmap-months,
-.heatmap-grid { display: grid; grid-template-columns: repeat(52, var(--cell)); gap: var(--gap); min-width: max-content; }
-.heatmap-months { height: 20px; color: #a3aea1; font-size: 9px; white-space: nowrap; }
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(52, var(--cell));
+  gap: var(--gap);
+  width: max-content;
+  margin-inline: auto;
+}
+.heatmap-months {
+  height: 16px;
+  font-size: 10px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
 .heat-week { display: grid; grid-template-rows: repeat(7, var(--cell)); gap: var(--gap); }
 .heat-cell {
   width: var(--cell);
   height: var(--cell);
   padding: 0;
   border: 0;
-  border-radius: 2px;
-  background: #edf1e9;
+  border-radius: var(--radius-sm);
+  background: var(--level-0);
 }
-button.heat-cell { cursor: pointer; }
-button.heat-cell:hover { box-shadow: inset 0 0 0 1px #354e39; }
-.heat-cell.selected { outline: 2px solid #354e39; outline-offset: 1px; }
+button.heat-cell { cursor: pointer; transition: box-shadow 120ms var(--ease); }
+button.heat-cell:hover { box-shadow: inset 0 0 0 1px var(--ink-3); }
+.heat-cell.today { box-shadow: inset 0 0 0 1px var(--today); }
+.heat-cell.selected { box-shadow: inset 0 0 0 2px var(--today); }
 .heat-cell.future { visibility: hidden; }
-.level-0 { background: #edf1e9; }
-.level-1 { background: #d0e2c8; }
-.level-2 { background: #a5c99b; }
-.level-3 { background: #73a66c; }
-.level-4 { background: #426f47; }
-.heat-footer {
+button.heat-cell:focus-visible { outline: 2px solid var(--today); outline-offset: 1px; }
+
+.level-0 { background: var(--level-0); }
+.level-1 { background: var(--level-1); }
+.level-2 { background: var(--level-2); }
+.level-3 { background: var(--level-3); }
+.level-4 { background: var(--level-4); }
+
+.heat-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
   justify-content: space-between;
-  margin: 15px 0 22px;
-  color: #a0ab9e;
-  font-size: 10px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
-.legend { display: flex; align-items: center; gap: 4px; }
-.legend span:first-child { margin-right: 5px; }
-.legend span:last-child { margin-left: 5px; }
-.legend i { width: 11px; height: 11px; border-radius: 2px; }
-.stats { border-top: 1px solid #eef1ec; padding-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); }
-.stats div { display: flex; align-items: baseline; gap: 10px; padding-left: 26px; border-left: 1px solid #edf0ea; }
-.stats div:first-child { padding-left: 0; border: 0; }
-.stats strong { font-size: 26px; font-weight: 600; }
-.stats span { color: #98a397; font-size: 11px; }
+.legend { display: flex; align-items: center; gap: 3px; }
+.legend span:first-child { margin-right: var(--space-1); }
+.legend span:last-child { margin-left: var(--space-1); }
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+}
 
-@media (max-width: 700px) {
-  .heatmap-wrap { margin-top: 25px; }
-  .stats div { display: block; padding-left: 14px; }
-  .stats strong, .stats span { display: block; }
-  .stats strong { font-size: 23px; }
-  .stats span { margin-top: 5px; font-size: 10px; }
+@media (pointer: coarse) {
+  .activity { --cell: 16px; --gap: 4px; }
+  .weekdays, .heatmap-months { font-size: 11px; }
 }
 </style>

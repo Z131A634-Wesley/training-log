@@ -280,7 +280,7 @@
 
 ### 7.4 热力图
 
-- 格子 12px（桌面）/ 16px（`pointer: coarse`），间距 3px，圆角 2px。
+- 格子 14px（桌面）/ 16px（`pointer: coarse`），间距 4px，圆角 2px。
 - 今天：`--today` 的 1px 内描边；选中：2px 内描边 + `--today`。
 - 图例用 `micro`，只写「少 / 多」两端，中间五格不写字。
 - 键盘：保留现有 roving tabindex + 方向键；焦点环 2px、`--today`。

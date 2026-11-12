@@ -72,18 +72,25 @@ async function confirmRestore() {
 </script>
 
 <template>
-  <div class="side-card backup-card">
-    <div class="backup-icon" aria-hidden="true">↓</div>
-    <p class="eyebrow">YOUR DATA, YOURS</p>
-    <h3>好好保存每一步</h3>
-    <p class="muted">数据保存在当前浏览器。定期导出备份，换设备或清除数据前也能找回记录。</p>
-    <div class="backup-actions">
-      <button type="button" :disabled="unavailable" @click="downloadBackup">导出备份 ↗</button>
-      <button type="button" :disabled="unavailable" @click="fileInput?.click()">导入备份 ↗</button>
+  <section class="backup" aria-labelledby="backup-title">
+    <div>
+      <h2 id="backup-title">备份</h2>
+      <p>数据只存在这台设备的浏览器里。换设备或清理数据之前，先导出一份 JSON。</p>
     </div>
+
+    <div class="backup-actions">
+      <button type="button" class="button button--secondary" :disabled="unavailable" @click="downloadBackup">
+        导出 JSON
+      </button>
+      <button type="button" class="button button--secondary" :disabled="unavailable" @click="fileInput?.click()">
+        导入 JSON
+      </button>
+    </div>
+
     <input ref="fileInput" class="visually-hidden" type="file" accept=".json,application/json"
       aria-label="选择 JSON 备份文件" @change="chooseBackup" />
-    <p v-if="error" class="alert" role="alert">{{ error }} 原记录未被替换。</p>
+
+    <p v-if="error" class="backup-error" role="alert">{{ error }} 原记录未被替换。</p>
 
     <dialog ref="dialog" aria-labelledby="restore-title" aria-describedby="restore-description"
       @cancel="restoring && $event.preventDefault()" @close="pending = null">
@@ -91,39 +98,40 @@ async function confirmRestore() {
       <p id="restore-description">
         这份备份包含 <strong>{{ pending?.length ?? 0 }}</strong> 次训练。确认后将替换当前浏览器中的全部训练记录，并结束当前编辑。
       </p>
-      <p v-if="restoreError" class="alert" role="alert">{{ restoreError }}</p>
+      <p v-if="restoreError" class="banner banner--error" role="alert">{{ restoreError }}</p>
       <footer>
-        <button type="button" class="button button-quiet" autofocus :disabled="restoring" @click="dialog?.close()">取消</button>
-        <button type="button" class="button button-dark" :disabled="restoring" @click="confirmRestore">确认替换</button>
+        <button type="button" class="button button--secondary" autofocus :disabled="restoring"
+          @click="dialog?.close()">取消</button>
+        <button type="button" class="button button--primary" :disabled="restoring" @click="confirmRestore">
+          确认替换
+        </button>
       </footer>
     </dialog>
-  </div>
+  </section>
 </template>
 
 <style scoped>
-.backup-card { background: #edf3e9; border-color: #e2eadc; }
-.backup-icon { font-size: 18px; color: #62815d; margin-bottom: 18px; }
-.backup-actions { display: flex; gap: 17px; margin-top: 18px; }
-.backup-actions button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #456c48;
-  font-size: 11px;
-  font-weight: 700;
-}
-.backup-actions button:hover:not(:disabled) { text-decoration: underline; }
-.backup-card .alert { margin-top: 14px; }
+.backup h2 { font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -0.01em; }
+.backup p { max-width: 46ch; margin-top: var(--space-2); font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.backup .backup-actions { margin: 0; justify-content: flex-end; }
+.backup-error { grid-column: 1 / -1; color: var(--danger); }
+
 dialog {
-  width: min(100% - 32px, 430px);
-  padding: 28px;
-  border: 0;
-  border-radius: 5px;
-  background: #fff;
-  color: #202820;
+  width: min(100% - 40px, 420px);
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 48px -24px rgb(25 27 24 / 0.28);
 }
-dialog::backdrop { background: #1d2c20aa; }
-dialog h3 { margin: 0 0 12px; font-size: 20px; letter-spacing: -.02em; }
-dialog p { font-size: 13px; line-height: 1.8; color: #738073; margin: 0; }
-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+dialog::backdrop { background: rgb(25 27 24 / 0.4); }
+dialog h3 { margin: 0 0 var(--space-3); font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -0.01em; }
+dialog p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+dialog .banner { margin-top: var(--space-4); }
+dialog footer { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+
+@media (max-width: 720px) {
+  .backup .backup-actions { justify-content: flex-start; }
+}
 </style>
