@@ -6,7 +6,7 @@ import TrainingHeatmap from './components/TrainingHeatmap.vue'
 import TrainingHistory from './components/TrainingHistory.vue'
 import { formatDateLabel, heatmapWeeks, localDate } from './domain/dates'
 import type { Exercise, Session } from './domain/training'
-import { loadSessions, saveSessions, STORAGE_KEY } from './storage/training-storage'
+import { loadSessions, LEGACY_STORAGE_KEY, migrateLegacyDocument, saveSessions, STORAGE_KEY } from './storage/training-storage'
 import { reveal as vReveal } from './ui/reveal'
 
 const sessions = ref<Session[]>([])
@@ -21,6 +21,7 @@ const formKey = ref(0)
 const formHeading = ref<HTMLHeadingElement>()
 const editor = ref<HTMLElement>()
 const selectedDate = ref(localDate())
+const migratedCount = ref(0)
 let storageBaseline: string | null | undefined
 let statusTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -28,6 +29,15 @@ class StorageConflict extends Error {}
 
 try {
   const storage = window.localStorage
+  // 早一版的记录存在另一个键里（动作字段叫 weight）。只在当前键为空时导入一次，旧数据保持原样。
+  if (storage.getItem(STORAGE_KEY) === null) {
+    const legacy = storage.getItem(LEGACY_STORAGE_KEY)
+    const migrated = legacy ? migrateLegacyDocument(legacy) : null
+    if (migrated?.length) {
+      saveSessions(storage, migrated)
+      migratedCount.value = migrated.length
+    }
+  }
   sessions.value = loadSessions({
     getItem(key) {
       storageBaseline = storage.getItem(key)
@@ -208,6 +218,10 @@ async function restoreTraining(next: Session[]): Promise<boolean> {
         </dl>
       </section>
 
+      <div v-if="migratedCount" class="banner" role="status">
+        <span>已从旧版本导入 {{ migratedCount }} 次训练，旧数据仍保留在浏览器里。</span>
+        <button type="button" aria-label="关闭提示" @click="migratedCount = 0">×</button>
+      </div>
       <div v-if="status" class="banner" role="status">
         <span>{{ status }}</span>
         <button type="button" aria-label="关闭提示" @click="status = ''">×</button>

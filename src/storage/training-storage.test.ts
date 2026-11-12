@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { Session } from '../domain/training'
-import { exportBackup, loadSessions, parseBackup, saveSessions, STORAGE_KEY } from './training-storage'
+import { exportBackup, loadSessions, migrateLegacyDocument, parseBackup, saveSessions, STORAGE_KEY } from './training-storage'
 
 const first: Session = {
   id: 'a',
@@ -75,4 +75,44 @@ it('reports a storage write failure to the caller', () => {
   const error = new Error('quota exceeded')
   const storage = { setItem() { throw error } }
   expect(() => saveSessions(storage, [first])).toThrow(error)
+})
+
+it('imports the earlier weight-based document and drops the exercise ids', () => {
+  const legacy = JSON.stringify({
+    schemaVersion: 1,
+    sessions: [{
+      id: 'old',
+      date: '2026-11-12',
+      createdAt: '2026-11-12T11:12:00.000Z',
+      exercises: [
+        { id: 'e1', name: '坐姿划船', weight: 40, sets: 4, note: '末组 35 kg × 12 次' },
+        { id: 'e2', name: '深蹲', weight: 0, sets: 3, note: '' },
+      ],
+    }],
+  })
+
+  expect(migrateLegacyDocument(legacy)).toEqual([{
+    id: 'old',
+    date: '2026-11-12',
+    createdAt: '2026-11-12T11:12:00.000Z',
+    exercises: [
+      { name: '坐姿划船', weightKg: 40, sets: 4, note: '末组 35 kg × 12 次' },
+      { name: '深蹲', weightKg: 0, sets: 3 },
+    ],
+  }])
+})
+
+it('leaves a current-format document untouched', () => {
+  const text = exportBackup([first])
+  expect(migrateLegacyDocument(text)).toEqual([first])
+})
+
+it('refuses to import a document that does not validate', () => {
+  expect(migrateLegacyDocument('not json')).toBeNull()
+  expect(migrateLegacyDocument('{"schemaVersion":2,"sessions":[]}')).toBeNull()
+  expect(migrateLegacyDocument('{"schemaVersion":1,"sessions":[{"id":"x"}]}')).toBeNull()
+  expect(migrateLegacyDocument(JSON.stringify({
+    schemaVersion: 1,
+    sessions: [{ id: 'x', date: '2026-02-29', createdAt: '2026-11-12T00:00:00.000Z', exercises: [] }],
+  }))).toBeNull()
 })

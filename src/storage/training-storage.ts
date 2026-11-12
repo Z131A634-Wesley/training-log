@@ -2,6 +2,8 @@ import { isLocalDate } from '../domain/dates'
 import type { Exercise, Session } from '../domain/training'
 
 export const STORAGE_KEY = 'training-log:sessions'
+/** 合并前那一版用的键和字段名（weight），只用于一次性导入。 */
+export const LEGACY_STORAGE_KEY = 'training-log:v1'
 const SCHEMA_VERSION = 1
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,4 +84,42 @@ function encodeBackup(sessions: readonly Session[], indent?: number): string {
 
 export function exportBackup(sessions: readonly Session[]): string {
   return encodeBackup(sessions, 2)
+}
+
+/**
+ * 把早期文档（动作上的 weight + 多余 id）转换成当前格式。
+ * 转换结果仍要过一遍 parseBackup 的校验；不合格就返回 null，交由调用方忽略。
+ */
+export function migrateLegacyDocument(text: string): Session[] | null {
+  let document: unknown
+  try {
+    document = JSON.parse(text)
+  } catch {
+    return null
+  }
+
+  if (!isRecord(document) || document.schemaVersion !== SCHEMA_VERSION || !Array.isArray(document.sessions)) {
+    return null
+  }
+
+  const sessions = document.sessions.map((session) => {
+    if (!isRecord(session) || !Array.isArray(session.exercises)) return session
+
+    return {
+      ...session,
+      exercises: session.exercises.map((exercise) => {
+        if (!isRecord(exercise) || 'weightKg' in exercise || typeof exercise.weight !== 'number') {
+          return exercise
+        }
+        const note = typeof exercise.note === 'string' && exercise.note.trim() !== '' ? exercise.note : undefined
+        return { name: exercise.name, weightKg: exercise.weight, sets: exercise.sets, ...(note ? { note } : {}) }
+      }),
+    }
+  })
+
+  try {
+    return parseBackup(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions }))
+  } catch {
+    return null
+  }
 }
