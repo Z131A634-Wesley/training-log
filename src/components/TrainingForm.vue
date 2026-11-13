@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { isLocalDate, localDate } from '../domain/dates'
 import { defaultWeight, exerciseNames, type Exercise, type Session } from '../domain/training'
+import { initialFormDate } from '../ui/form-date'
 
 const props = defineProps<{
   sessions: readonly Session[]
@@ -38,14 +39,16 @@ function makeRow(exercise?: Exercise): DraftExercise {
 }
 
 const today = ref(localDate())
-const date = ref(props.editing?.date ?? props.initialDate ?? today.value)
+const start = initialFormDate(props.editing?.date, props.initialDate, today.value)
+const date = ref(start.date)
 const rows = ref(props.editing ? props.editing.exercises.map(makeRow) : [makeRow()])
 const error = ref('')
 const form = ref<HTMLFormElement>()
 const history = computed(() => props.sessions.filter((session) => session.id !== props.editing?.id))
 const names = computed(() => exerciseNames(props.sessions).sort((left, right) => left.localeCompare(right, 'zh-CN')))
 const openPicker = ref<number | null>(null)
-let preserveDate = false
+// 编辑或补记时日期是明确的，不允许被「回到今天」覆盖。
+let preserveDate = start.pinned
 
 function refreshDefaultDate() {
   today.value = localDate()
@@ -164,7 +167,8 @@ function fail(message: string, field: string) {
 
 function submit() {
   if (props.disabled) return
-  refreshDefaultDate()
+  // 只刷新「今天」这个基准，绝不改动用户已经选好的日期。
+  today.value = localDate()
   error.value = ''
   if (!isLocalDate(date.value) || date.value > today.value) {
     return fail('请选择今天或更早的训练日期。', 'training-date')
