@@ -4,12 +4,19 @@ import TrainingBackup from './components/TrainingBackup.vue'
 import TrainingForm from './components/TrainingForm.vue'
 import TrainingHeatmap from './components/TrainingHeatmap.vue'
 import TrainingHistory from './components/TrainingHistory.vue'
-import { formatDateLabel, heatmapWeeks, localDate } from './domain/dates'
-import type { Exercise, Session } from './domain/training'
-import { importLegacySessions, loadSessions, saveSessions, STORAGE_KEY } from './storage/training-storage'
+import { formatDateLabel, localDate } from './domain/dates'
+import type { Exercise, Session, TemplateExercise } from './domain/training'
+import {
+  emptyDocument,
+  importLegacySessions,
+  loadDocument,
+  saveDocument,
+  STORAGE_KEY,
+  type Document,
+} from './storage/training-storage'
 import { reveal as vReveal } from './ui/reveal'
 
-const sessions = ref<Session[]>([])
+const doc = ref<Document>(emptyDocument())
 const storageError = ref('')
 const writeError = ref('')
 const status = ref('')
@@ -27,11 +34,14 @@ let statusTimer: ReturnType<typeof setTimeout> | undefined
 
 class StorageConflict extends Error {}
 
+const sessions = computed(() => doc.value.sessions)
+const templates = computed(() => doc.value.templates)
+
 try {
   const storage = window.localStorage
   // 早一版把记录存在另一个键里（动作字段叫 weight），这里一次性并进来；旧数据保持原样。
   migratedCount.value = importLegacySessions(storage)
-  sessions.value = loadSessions({
+  doc.value = loadDocument({
     getItem(key) {
       storageBaseline = storage.getItem(key)
       return storageBaseline
@@ -48,7 +58,8 @@ const selectedSets = computed(() => selectedSessions.value
   .reduce((sum, session) => sum + session.exercises.reduce((total, exercise) => total + exercise.sets, 0), 0))
 
 const weekCount = computed(() => {
-  const monday = heatmapWeeks(localDate()).at(-1)![0]!
+  const today = localDate()
+  const monday = MondayOf(today)
   return sessions.value.filter((session) => session.date >= monday).length
 })
 const totalSets = computed(() => sessions.value
@@ -58,6 +69,13 @@ const lastLabel = computed(() => (latestDate.value ? shortDate(latestDate.value)
 const todayLabel = new Intl.DateTimeFormat('zh-CN', {
   month: 'long', day: 'numeric', weekday: 'short',
 }).format(new Date())
+
+function MondayOf(today: string): string {
+  const date = new Date(`${today}T00:00:00Z`)
+  const sinceMonday = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - sinceMonday)
+  return date.toISOString().slice(0, 10)
+}
 
 function shortDate(value: string): string {
   const [year, month, day] = value.split('-').map(Number)
@@ -72,14 +90,14 @@ watch(status, (value) => {
 })
 onUnmounted(() => { if (statusTimer) clearTimeout(statusTimer) })
 
-async function persist(next: Session[]): Promise<boolean> {
+async function persist(next: Document): Promise<boolean> {
   if (writing.value) return false
   writing.value = true
   writeError.value = ''
   try {
     if (storageBaseline === undefined) throw new Error('无法确定浏览器存储的原始内容。')
     const storage = window.localStorage
-    const write = () => saveSessions({
+    const write = () => saveDocument({
       setItem(key, value) {
         // 另一个标签页已改过记录时拒绝覆盖，草稿留在表单里。
         if (storage.getItem(key) !== storageBaseline) throw new StorageConflict()
@@ -89,7 +107,7 @@ async function persist(next: Session[]): Promise<boolean> {
     }, next)
     if (navigator.locks) await navigator.locks.request(STORAGE_KEY, write)
     else write()
-    sessions.value = next
+    doc.value = next
     return true
   } catch (error) {
     writeError.value = error instanceof StorageConflict
@@ -145,11 +163,11 @@ async function saveTraining(date: string, exercises: Exercise[]) {
   if (original) {
     const next = sessions.value.map((session) =>
       session.id === original.id ? { ...session, date, exercises } : session)
-    if (!await persist(next)) return
+    if (!await persist({ ...doc.value, sessions: next })) return
     status.value = '训练已更新。'
   } else {
     const session: Session = { id: crypto.randomUUID(), date, createdAt: new Date().toISOString(), exercises }
-    if (!await persist([...sessions.value, session])) return
+    if (!await persist({ ...doc.value, sessions: [...sessions.value, session] })) return
     status.value = '训练已保存。'
   }
   selectedDate.value = date
@@ -162,15 +180,37 @@ async function removeTraining(session: Session) {
   if (storageError.value || writing.value) return
   if (!window.confirm(`确定删除 ${formatDateLabel(session.date)} 的这次训练吗？此操作无法撤销。`)) return
   status.value = ''
-  if (!await persist(sessions.value.filter((item) => item.id !== session.id))) return
+  if (!await persist({ ...doc.value, sessions: sessions.value.filter((item) => item.id !== session.id) })) return
   if (editing.value?.id === session.id) closeForm()
   status.value = '训练已删除。'
 }
 
-async function restoreTraining(next: Session[]): Promise<boolean> {
+async function saveTemplate(name: string, exercises: TemplateExercise[]) {
+  const trimmed = name.trim()
+  if (!trimmed || !exercises.length) return
+  const existing = templates.value.find((template) => template.name === trimmed)
+  const next = existing
+    ? templates.value.map((template) => (template.id === existing.id ? { ...template, exercises } : template))
+    : [...templates.value, { id: crypto.randomUUID(), name: trimmed, exercises }]
+
+  if (await persist({ ...doc.value, templates: next })) {
+    status.value = existing ? `训练日「${trimmed}」已更新。` : `训练日「${trimmed}」已保存。`
+  }
+}
+
+async function removeTemplate(id: string) {
+  const target = templates.value.find((template) => template.id === id)
+  if (!target) return
+  if (!window.confirm(`删除训练日「${target.name}」？已经记录的训练不受影响。`)) return
+  if (await persist({ ...doc.value, templates: templates.value.filter((template) => template.id !== id) })) {
+    status.value = `训练日「${target.name}」已删除。`
+  }
+}
+
+async function restoreTraining(next: Document): Promise<boolean> {
   if (!await persist(next)) return false
   storageError.value = ''
-  selectedDate.value = next.at(-1)?.date ?? localDate()
+  selectedDate.value = next.sessions.at(-1)?.date ?? localDate()
   formOpen.value = false
   editing.value = null
   formKey.value++
@@ -228,8 +268,9 @@ async function restoreTraining(next: Session[]): Promise<boolean> {
             <button type="button" class="link" @click="closeForm">关闭</button>
           </div>
           <TrainingForm :key="formKey" :sessions="sessions" :editing="editing"
-            :disabled="Boolean(storageError) || writing" :initial-date="formDate"
-            @save="saveTraining" @cancel="closeForm" />
+            :templates="templates" :disabled="Boolean(storageError) || writing" :initial-date="formDate"
+            @save="saveTraining" @cancel="closeForm"
+            @save-template="saveTemplate" @remove-template="removeTemplate" />
           <p v-if="writeError" class="banner banner--error" role="alert">{{ writeError }}</p>
         </section>
       </Transition>
@@ -268,7 +309,7 @@ async function restoreTraining(next: Session[]): Promise<boolean> {
         </div>
       </section>
 
-      <TrainingBackup v-reveal :sessions="sessions" :unavailable="Boolean(storageError)"
+      <TrainingBackup v-reveal :document="doc" :unavailable="Boolean(storageError)"
         :restore="restoreTraining" />
     </main>
 

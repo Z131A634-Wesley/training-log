@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dailySets, defaultWeight, exerciseNames, type Session } from './training'
+import { dailySets, defaultWeight, exerciseNames, latestSession, type Session } from './training'
 
 function row(id: string, date: string, createdAt: string, ...exercises: Session['exercises']): Session {
   return { id, date, createdAt, exercises }
@@ -37,8 +37,7 @@ describe('defaultWeight', () => {
   })
 })
 
-it('offers unique exercise names after trimming spaces', () => {
-  const pushups = row('4', '2026-11-13', '2026-11-13T09:00:00.000Z', { name: '俯卧撑', weightKg: 0, sets: 3 })
+it('offers unique exercise names after trimming spaces', () => {  const pushups = row('4', '2026-11-13', '2026-11-13T09:00:00.000Z', { name: '俯卧撑', weightKg: 0, sets: 3 })
   expect(exerciseNames([first, later, pushups])).toEqual(['划船', '俯卧撑'])
 })
 
@@ -53,4 +52,15 @@ it('sums all exercises across same-day sessions and recomputes when a session is
     ['2026-11-12', 7], ['2025-12-31', 6], ['2026-01-01', 5],
   ]))
   expect(dailySets([later, yearEnd, newYear]).get('2026-11-12')).toBe(3)
+})
+
+it('picks the most recent session by date, then by save time', () => {
+  expect(latestSession([])).toBeUndefined()
+
+  const olderDate = row('o', '2026-11-01', '2026-11-05T10:00:00.000Z', { name: '深蹲', weightKg: 50, sets: 3 })
+  const newerDate = row('n', '2026-11-10', '2026-11-10T10:00:00.000Z', { name: '深蹲', weightKg: 55, sets: 3 })
+  const sameDayLater = row('s', '2026-11-10', '2026-11-10T20:00:00.000Z', { name: '深蹲', weightKg: 60, sets: 3 })
+
+  expect(latestSession([olderDate, newerDate])?.id).toBe('n')
+  expect(latestSession([sameDayLater, newerDate, olderDate])?.id).toBe('s')
 })

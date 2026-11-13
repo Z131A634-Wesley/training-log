@@ -1,12 +1,22 @@
 import { isLocalDate } from '../domain/dates'
-import type { Exercise, Session } from '../domain/training'
+import type { Exercise, Session, Template, TemplateExercise } from '../domain/training'
 
 export const STORAGE_KEY = 'training-log:sessions'
 /** 合并前那一版用的键和字段名（weight），只用于一次性导入。 */
 export const LEGACY_STORAGE_KEY = 'training-log:v1'
 /** 记录「旧数据已经检查过」，避免删掉的记录下次加载又冒出来。 */
 export const LEGACY_IMPORTED_KEY = 'training-log:v1:imported'
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
+
+export interface Document {
+  schemaVersion: 2
+  sessions: Session[]
+  templates: Template[]
+}
+
+export function emptyDocument(): Document {
+  return { schemaVersion: SCHEMA_VERSION, sessions: [], templates: [] }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -42,6 +52,23 @@ function isSession(value: unknown): value is Session {
   return true
 }
 
+function isTemplateExercise(value: unknown): value is TemplateExercise {
+  return isRecord(value)
+    && typeof value.name === 'string' && value.name.trim() !== ''
+    && typeof value.sets === 'number' && Number.isInteger(value.sets) && value.sets > 0
+}
+
+function isTemplate(value: unknown): value is Template {
+  if (!isRecord(value)
+    || typeof value.id !== 'string' || value.id.trim() === ''
+    || typeof value.name !== 'string' || value.name.trim() === ''
+    || !Array.isArray(value.exercises) || value.exercises.length === 0) {
+    return false
+  }
+
+  return value.exercises.every(isTemplateExercise)
+}
+
 function validateSessions(value: unknown): Session[] {
   if (!Array.isArray(value)) throw new Error('训练记录应为列表。')
 
@@ -57,16 +84,36 @@ function validateSessions(value: unknown): Session[] {
   return sessions
 }
 
-export function loadSessions(storage: Pick<Storage, 'getItem'>): Session[] {
+function validateTemplates(value: unknown): Template[] {
+  if (!Array.isArray(value)) throw new Error('训练日应为列表。')
+
+  const templates: Template[] = []
+  const ids = new Set<string>()
+  const names = new Set<string>()
+  for (const [index, template] of value.entries()) {
+    if (!isTemplate(template)) throw new Error(`第 ${index + 1} 个训练日的字段无效。`)
+    if (ids.has(template.id)) throw new Error(`第 ${index + 1} 个训练日的 ID 重复。`)
+
+    const name = template.name.trim()
+    if (names.has(name)) throw new Error(`训练日「${name}」重复。`)
+
+    ids.add(template.id)
+    names.add(name)
+    templates.push({ ...template, name })
+  }
+  return templates
+}
+
+export function loadDocument(storage: Pick<Storage, 'getItem'>): Document {
   const text = storage.getItem(STORAGE_KEY)
-  return text === null ? [] : parseBackup(text)
+  return text === null ? emptyDocument() : parseBackup(text)
 }
 
-export function saveSessions(storage: Pick<Storage, 'setItem'>, sessions: readonly Session[]): void {
-  storage.setItem(STORAGE_KEY, encodeBackup(sessions))
+export function saveDocument(storage: Pick<Storage, 'setItem'>, document: Document): void {
+  storage.setItem(STORAGE_KEY, encodeBackup(document))
 }
 
-export function parseBackup(text: string): Session[] {
+export function parseBackup(text: string): Document {
   let document: unknown
   try {
     document = JSON.parse(text)
@@ -74,18 +121,29 @@ export function parseBackup(text: string): Session[] {
     throw new Error('备份内容不是有效的 JSON。')
   }
 
-  if (!isRecord(document) || document.schemaVersion !== SCHEMA_VERSION) {
+  if (!isRecord(document)) throw new Error('无法识别此备份的版本。')
+
+  // 版本 1 只有 sessions，导入后补空模板列表。
+  const version = document.schemaVersion
+  if (version !== 1 && version !== SCHEMA_VERSION) {
     throw new Error('无法识别此备份的版本。')
   }
-  return validateSessions(document.sessions)
+
+  const sessions = validateSessions(document.sessions)
+  const templates = version === 1 ? [] : validateTemplates(document.templates)
+  return { schemaVersion: SCHEMA_VERSION, sessions, templates }
 }
 
-function encodeBackup(sessions: readonly Session[], indent?: number): string {
-  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions: validateSessions(sessions) }, null, indent)
+function encodeBackup(document: Document, indent?: number): string {
+  return JSON.stringify({
+    schemaVersion: SCHEMA_VERSION,
+    sessions: validateSessions(document.sessions),
+    templates: validateTemplates(document.templates),
+  }, null, indent)
 }
 
-export function exportBackup(sessions: readonly Session[]): string {
-  return encodeBackup(sessions, 2)
+export function exportBackup(document: Document): string {
+  return encodeBackup(document, 2)
 }
 
 /**
@@ -100,7 +158,7 @@ export function migrateLegacyDocument(text: string): Session[] | null {
     return null
   }
 
-  if (!isRecord(document) || document.schemaVersion !== SCHEMA_VERSION || !Array.isArray(document.sessions)) {
+  if (!isRecord(document) || document.schemaVersion !== 1 || !Array.isArray(document.sessions)) {
     return null
   }
 
@@ -120,7 +178,7 @@ export function migrateLegacyDocument(text: string): Session[] | null {
   })
 
   try {
-    return parseBackup(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions }))
+    return parseBackup(JSON.stringify({ schemaVersion: 1, sessions })).sessions
   } catch {
     return null
   }
@@ -139,12 +197,13 @@ export function importLegacySessions(storage: Pick<Storage, 'getItem' | 'setItem
   const migrated = migrateLegacyDocument(raw)
   if (!migrated?.length) return 0
 
-  const stored = storage.getItem(STORAGE_KEY)
-  const current = stored === null ? [] : parseBackup(stored)
-  const known = new Set(current.map((session) => session.id))
-  const merged = [...current, ...migrated.filter((session) => !known.has(session.id))]
+  const current = loadDocument(storage)
+  const known = new Set(current.sessions.map((session) => session.id))
+  const merged = [...current.sessions, ...migrated.filter((session) => !known.has(session.id))]
 
-  if (merged.length > current.length) saveSessions(storage, merged)
+  if (merged.length > current.sessions.length) {
+    saveDocument(storage, { ...current, sessions: merged })
+  }
   storage.setItem(LEGACY_IMPORTED_KEY, '1')
-  return merged.length - current.length
+  return merged.length - current.sessions.length
 }

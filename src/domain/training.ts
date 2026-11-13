@@ -12,6 +12,30 @@ export interface Session {
   exercises: Exercise[]
 }
 
+/** 训练日模板：一组固定的动作和组数，重量每次按历史带出。 */
+export interface TemplateExercise {
+  name: string
+  sets: number
+}
+
+export interface Template {
+  id: string
+  name: string
+  exercises: TemplateExercise[]
+}
+
+/** 最近一次训练：日期最新，同一天按保存时间最新。 */
+export function latestSession(sessions: readonly Session[]): Session | undefined {
+  let latest: Session | undefined
+  for (const session of sessions) {
+    const newer = !latest
+      || session.date > latest.date
+      || (session.date === latest.date && Date.parse(session.createdAt) >= Date.parse(latest.createdAt))
+    if (newer) latest = session
+  }
+  return latest
+}
+
 /**
  * 起始重量：取训练日期当天或之前、最近一次已保存的起始重量。
  * 同一天有多次训练时按保存时间（createdAt）取最近的一次，

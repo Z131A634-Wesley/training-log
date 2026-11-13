@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { localDate } from '../domain/dates'
-import type { Session } from '../domain/training'
-import { exportBackup, parseBackup } from '../storage/training-storage'
+import { exportBackup, parseBackup, type Document } from '../storage/training-storage'
 
 const props = defineProps<{
-  sessions: readonly Session[]
+  document: Document
   unavailable: boolean
-  restore: (sessions: Session[]) => Promise<boolean> | boolean
+  restore: (document: Document) => Promise<boolean> | boolean
 }>()
 
 const dialog = ref<HTMLDialogElement>()
 const fileInput = ref<HTMLInputElement>()
-const pending = ref<Session[] | null>(null)
+const pending = ref<Document | null>(null)
 const error = ref('')
 const restoring = ref(false)
 const restoreError = ref('')
@@ -21,7 +20,7 @@ let lastSelection = 0
 function downloadBackup() {
   error.value = ''
   try {
-    const blob = new Blob([exportBackup(props.sessions)], { type: 'application/json' })
+    const blob = new Blob([exportBackup(props.document)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -42,9 +41,9 @@ async function chooseBackup(event: Event) {
   const selection = ++lastSelection
   error.value = ''
   try {
-    const sessions = parseBackup(await file.text())
+    const document = parseBackup(await file.text())
     if (selection !== lastSelection) return
-    pending.value = sessions
+    pending.value = document
     restoreError.value = ''
     dialog.value?.showModal()
   } catch (cause) {
@@ -96,7 +95,8 @@ async function confirmRestore() {
       @cancel="restoring && $event.preventDefault()" @close="pending = null">
       <h3 id="restore-title">恢复训练记录？</h3>
       <p id="restore-description">
-        这份备份包含 <strong>{{ pending?.length ?? 0 }}</strong> 次训练。确认后将替换当前浏览器中的全部训练记录，并结束当前编辑。
+        这份备份包含 <strong>{{ pending?.sessions.length ?? 0 }}</strong> 次训练、
+        <strong>{{ pending?.templates.length ?? 0 }}</strong> 个训练日。确认后将替换当前浏览器中的全部记录，并结束当前编辑。
       </p>
       <p v-if="restoreError" class="banner banner--error" role="alert">{{ restoreError }}</p>
       <footer>

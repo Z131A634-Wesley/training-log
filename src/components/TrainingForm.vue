@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { isLocalDate, localDate } from '../domain/dates'
-import { defaultWeight, exerciseNames, type Exercise, type Session } from '../domain/training'
+import { defaultWeight, exerciseNames, latestSession, type Exercise, type Session, type Template, type TemplateExercise } from '../domain/training'
 import { initialFormDate } from '../ui/form-date'
 
 const props = defineProps<{
   sessions: readonly Session[]
   editing: Session | null
+  templates: readonly Template[]
   disabled: boolean
   initialDate?: string
 }>()
@@ -14,6 +15,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   save: [date: string, exercises: Exercise[]]
   cancel: []
+  saveTemplate: [name: string, exercises: TemplateExercise[]]
+  removeTemplate: [id: string]
 }>()
 
 interface DraftExercise {
@@ -47,6 +50,11 @@ const form = ref<HTMLFormElement>()
 const history = computed(() => props.sessions.filter((session) => session.id !== props.editing?.id))
 const names = computed(() => exerciseNames(props.sessions).sort((left, right) => left.localeCompare(right, 'zh-CN')))
 const openPicker = ref<number | null>(null)
+const managing = ref(false)
+const savingTemplate = ref(false)
+const templateName = ref('')
+const templateError = ref('')
+const lastSession = computed(() => latestSession(history.value))
 // 编辑或补记时日期是明确的，不允许被「回到今天」覆盖。
 let preserveDate = start.pinned
 
@@ -93,6 +101,67 @@ function removeRow(index: number) {
   if (openPicker.value === removed.id) openPicker.value = null
   rows.value.splice(index, 1)
   focusField(`exercise-name-${rows.value[Math.min(index, rows.value.length - 1)]!.id}`)
+}
+
+/** 用训练日模板铺满表单：动作和组数来自模板，重量按当天及之前的最近记录带出。 */
+function applyTemplate(template: Template) {
+  startDraft()
+  preserveDate = true
+  error.value = ''
+  openPicker.value = null
+  rows.value = template.exercises.map((exercise) => {
+    const weight = defaultWeight(history.value, exercise.name, date.value)
+    const row = makeRow()
+    row.name = exercise.name
+    row.sets = String(exercise.sets)
+    row.weight = weight === undefined ? '' : String(weight)
+    row.inheritsWeight = true
+    return row
+  })
+}
+
+/** 一键重复上次训练：连重量和备注一起带回来。 */
+function applyLastSession(session?: Session) {
+  if (!session) return
+  startDraft()
+  preserveDate = true
+  error.value = ''
+  openPicker.value = null
+  rows.value = session.exercises.map((exercise) => {
+    const row = makeRow()
+    row.name = exercise.name
+    row.sets = String(exercise.sets)
+    row.note = exercise.note ?? ''
+    row.weight = String(exercise.weightKg)
+    return row
+  })
+}
+
+function beginSaveTemplate() {
+  savingTemplate.value = true
+  templateError.value = ''
+  templateName.value = ''
+}
+
+function confirmSaveTemplate() {
+  const name = templateName.value.trim()
+  const exercises = rows.value
+    .map((row) => ({ name: row.name.trim(), sets: Number(row.sets) }))
+    .filter((item) => item.name !== '' && Number.isInteger(item.sets) && item.sets > 0)
+
+  if (!name) {
+    templateError.value = '先给这个训练日起个名字。'
+    return
+  }
+  if (!exercises.length) {
+    templateError.value = '表单里还没有能保存的动作。'
+    return
+  }
+
+  emit('saveTemplate', name, exercises)
+  savingTemplate.value = false
+  templateName.value = ''
+  templateError.value = ''
 }
 
 function updateInheritedWeight(row: DraftExercise) {
@@ -194,6 +263,34 @@ function submit() {
 
 <template>
   <form ref="form" class="training-form" novalidate @focusin="refreshDefaultDate" @submit.prevent="submit">
+    <div class="day-picker">
+      <p class="day-title">训练日</p>
+      <div class="day-chips">
+        <button v-if="lastSession" type="button" class="chip" @click="applyLastSession(lastSession)">
+          上次训练
+        </button>
+        <button v-for="template in templates" :key="template.id" type="button" class="chip"
+          :class="{ 'chip--danger': managing }"
+          @click="managing ? emit('removeTemplate', template.id) : applyTemplate(template)">
+          {{ template.name }}<span v-if="managing" aria-hidden="true"> ×</span>
+        </button>
+        <button v-if="!savingTemplate" type="button" class="chip chip--ghost" @click="beginSaveTemplate">
+          + 存为训练日
+        </button>
+        <button v-if="templates.length" type="button" class="chip chip--ghost" @click="managing = !managing">
+          {{ managing ? '完成' : '管理' }}
+        </button>
+      </div>
+
+      <div v-if="savingTemplate" class="day-save">
+        <input v-model="templateName" type="text" placeholder="例如：胸 + 三头"
+          aria-label="训练日名称" @keydown.enter.prevent="confirmSaveTemplate" />
+        <button type="button" class="button button--secondary" @click="confirmSaveTemplate">保存</button>
+        <button type="button" class="link" @click="savingTemplate = false">取消</button>
+      </div>
+      <p v-if="templateError" class="form-error" role="alert">{{ templateError }}</p>
+    </div>
+
     <label class="field date-field">
       <span>训练日期</span>
       <input id="training-date" type="date" :value="date" :max="today" required @input="changeDate" />
@@ -274,6 +371,44 @@ function submit() {
 
 <style scoped>
 .training-form { display: grid; gap: var(--space-5); }
+
+.day-picker { display: grid; gap: var(--space-2); }
+.day-title { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.day-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+.chip:hover { background: var(--surface-sunk); }
+.chip--ghost { border-style: dashed; color: var(--ink-2); }
+.chip--danger { border-color: var(--danger); color: var(--danger); }
+.chip--danger:hover { background: #fbf0ed; }
+
+.day-save { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.day-save input {
+  flex: 1 1 200px;
+  height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+}
+.day-save input:focus {
+  outline: none;
+  border-color: var(--today);
+  box-shadow: 0 0 0 3px rgb(180 83 42 / 0.16);
+}
 
 .field { display: grid; gap: var(--space-2); }
 .field > label, .field > span {
